@@ -1,0 +1,87 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider  = "postgresql"
+}
+
+model Game {
+  id        String   @id @default(uuid())
+  pin       String   @unique // 6 digits unique pin
+  hostId    String   // Supabase Auth ID
+  status    GameStatus @default(LOBBY)
+  createdAt DateTime @default(now())
+  
+  // Relations
+  players      Player[]
+  rounds       Round[]
+  transactions Transaction[]
+}
+
+model Player {
+  id        String   @id @default(uuid())
+  name      String
+  isHost    Boolean  @default(false)
+  balance   Int      @default(0)
+  status    PlayerStatus @default(WAITING)
+  socketId  String?
+  createdAt DateTime @default(now())
+  
+  // Relations
+  gameId       String
+  game         Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+}
+
+model Round {
+  id          String   @id @default(uuid())
+  roundNumber Int
+  createdAt   DateTime @default(now())
+
+  // Relations
+  gameId       String
+  game         Game          @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+}
+
+// Transaction tracks every point change
+model Transaction {
+  id          String          @id @default(uuid())
+  amount      Int             // Positive for win, negative for loss
+  type        TransactionType
+  createdAt   DateTime        @default(now())
+
+  // Relations
+  gameId      String
+  game        Game    @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  playerId    String
+  player      Player  @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  roundId     String? // Optional if we want global transactions, but usually required for rounds
+  round       Round?  @relation(fields: [roundId], references: [id], onDelete: SetNull)
+}
+
+enum GameStatus {
+  LOBBY
+  ACTIVE
+  FINISHED
+}
+
+enum PlayerStatus {
+  WAITING
+  PLAYING
+  ELIMINATED
+}
+
+enum TransactionType {
+  WIN
+  LOSE
+  XI_DACH
+  NGU_LINH
+  XI_BANG
+  QUAC
+}

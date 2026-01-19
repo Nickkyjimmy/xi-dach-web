@@ -1,66 +1,79 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { createGame } from "./actions/game-actions"
+import Link from "next/link"
 
 export default function Home() {
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
+      
+      {/* Hero Section */}
+      <div className="text-center mb-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <div className="w-20 h-20 bg-gradient-to-tr from-purple-600 to-blue-600 rounded-2xl mx-auto mb-6 shadow-xl shadow-purple-900/20 flex items-center justify-center transform rotate-3 hover:rotate-6 transition-transform">
+          <span className="text-4xl">🂡</span>
         </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-white mb-2 drop-shadow-md">
+          Xì Dách VN
+        </h1>
+        <p className="text-slate-400 font-medium">Classic Vietnamese Blackjack</p>
+      </div>
+
+      <div className="w-full max-w-md space-y-6">
+        
+        {/* Player Zone */}
+        <Card className="border-0 bg-white/5 backdrop-blur-lg shadow-2xl ring-1 ring-white/10">
+          <CardHeader className="text-center pb-2">
+            <CardTitle className="text-2xl font-bold text-white">Join Game</CardTitle>
+            <CardDescription className="text-slate-400">Enter the PIN to start playing</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form action="/join" method="get" className="space-y-4">
+              <Input 
+                name="pin"
+                type="text" 
+                placeholder="000 000" 
+                className="text-center text-3xl h-16 tracking-[0.5em] font-mono font-bold bg-slate-900/50 border-slate-700 text-white placeholder:text-slate-700 focus-visible:ring-purple-500 rounded-xl"
+                maxLength={6}
+                required
+              />
+              <Button 
+                type="submit" 
+                className="w-full h-12 text-lg font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-900/20 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                Enter
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* Host Zone */}
+        <div className="text-center">
+            <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-slate-800" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-slate-950 px-2 text-slate-500 font-medium tracking-wider">or host a game</span>
+                </div>
+            </div>
+            
+            <form action={createGame} className="mt-6">
+                <Button 
+                    variant="outline" 
+                    type="submit"
+                    className="h-11 px-8 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white bg-transparent rounded-full font-medium transition-colors"
+                >
+                    Create a New Room
+                </Button>
+            </form>
         </div>
-      </main>
+
+      </div>
+      
+      <footer className="mt-16 text-slate-600 text-sm">
+        <p>© 2024 Xì Dách VN. Ready to deal?</p>
+      </footer>
     </div>
-  );
+  )
 }
