@@ -7,10 +7,13 @@ import { QRCodeGenerator } from '@/components/game/qrcode-generator'
 import { useEffect, useState } from 'react'
 import { Banknote, Trophy, RefreshCw } from 'lucide-react'
 
+import { createClient } from '@/lib/supabase/client'
+
 export default function PlayerGamePage() {
   const params = useParams()
   const searchParams = useSearchParams()
   const gameId = params.id as string
+  const supabase = createClient()
   
   const [playerId, setPlayerId] = useState<string | null>(null)
   const [player, setPlayer] = useState<any>(null)
@@ -19,36 +22,77 @@ export default function PlayerGamePage() {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // 1. Try URL
     const urlId = searchParams.get('id')
-    // 2. Try LocalStorage
     const localId = typeof window !== 'undefined' ? localStorage.getItem('playerId') : null
-    
     const finalId = urlId || localId
     setPlayerId(finalId)
   }, [searchParams])
 
   const fetchPlayerData = async () => {
     try {
-      const res = await fetch(`/api/game/${gameId}`)
-      const data = await res.json()
-      if (data.game) {
-        setGame(data.game)
-        setCurrentRound(data.currentRound)
-        const me = data.players.find((p: any) => p.id === playerId)
+      // 1. Fetch Game state
+      const { data: gameData } = await supabase
+        .from('Game')
+        .select('*')
+        .eq('id', gameId)
+        .single()
+      
+      if (gameData) setGame(gameData)
+
+      // 2. Fetch Latest Round Results
+      const { data: roundData } = await supabase
+        .from('Round')
+        .select(`
+            *,
+            results:RoundResult(*)
+        `)
+        .eq('gameId', gameId)
+        .order('roundNumber', { ascending: false })
+        .limit(1)
+
+      if (roundData?.[0]) setCurrentRound(roundData[0])
+
+      // 3. Fetch My Specific Player Info (for balance)
+      if (playerId) {
+        const { data: me } = await supabase
+          .from('Player')
+          .select('*')
+          .eq('id', playerId)
+          .single()
+        
         if (me) setPlayer(me)
       }
     } catch (err) {
-      console.error("Failed to fetch player data", err)
+      console.error("Failed to fetch player data via Supabase", err)
     } finally {
       setIsLoading(false)
     }
   }
 
   useEffect(() => {
+    if (!playerId) return 
+    
+    // Initial load
     fetchPlayerData()
-    const interval = setInterval(fetchPlayerData, 3000) // Poll every 3 seconds
-    return () => clearInterval(interval)
+
+    // Realtime channel for this game
+    const channel = supabase
+      .channel(`player-updates-${gameId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', filter: `gameId=eq.${gameId}` }, 
+        () => fetchPlayerData()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'Game', filter: `id=eq.${gameId}` },
+        () => fetchPlayerData()
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [gameId, playerId])
 
   const myResult = currentRound?.results?.find((r: any) => r.playerId === playerId)

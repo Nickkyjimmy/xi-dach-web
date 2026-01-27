@@ -19,9 +19,12 @@ import { QRScanner } from '@/components/game/qr-scanner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
+import { createClient } from '@/lib/supabase/client'
+
 export default function HostGamePage() {
   const params = useParams()
   const gameId = params.id as string
+  const supabase = createClient()
   
   const [game, setGame] = useState<any>(null)
   const [players, setPlayers] = useState<any[]>([])
@@ -33,26 +36,77 @@ export default function HostGamePage() {
   const [scanType, setScanType] = useState<'WIN' | 'DRAW' | 'X2'>('WIN')
   const [isLoading, setIsLoading] = useState(false)
 
-  // Fetch Game Data
+  // Fetch Game Data directly from Supabase (Bypass Vercel API for 0 execution cost)
   const fetchGameData = async () => {
     try {
-      const response = await fetch(`/api/game/${gameId}?t=${Date.now()}`)
-      const data = await response.json()
+      // 1. Fetch Game
+      const { data: gameData, error: gameError } = await supabase
+        .from('Game')
+        .select('*')
+        .eq('id', gameId)
+        .single()
       
-      if (data.game) {
-        setGame(data.game)
-        setPlayers(data.players || [])
-        setCurrentRound(data.currentRound)
-      }
+      if (gameError || !gameData) throw gameError
+
+      // 2. Fetch Players
+      const { data: playerData, error: playersError } = await supabase
+        .from('Player')
+        .select('*')
+        .eq('gameId', gameId)
+        .order('createdAt', { ascending: true })
+
+      if (playersError) throw playersError
+
+      // 3. Fetch Latest Round with Results and Transactions
+      const { data: roundData, error: roundError } = await supabase
+        .from('Round')
+        .select(`
+            *,
+            results:RoundResult(*),
+            transactions:Transaction(*)
+        `)
+        .eq('gameId', gameId)
+        .order('roundNumber', { ascending: false })
+        .limit(1)
+
+      if (roundError) throw roundError
+      
+      setGame(gameData)
+      setPlayers(playerData || [])
+      setCurrentRound(roundData?.[0] || null)
+      
     } catch (error) {
-      console.error('Error fetching game data:', error)
+      console.error('Error fetching game data via Supabase:', error)
     }
   }
 
   useEffect(() => {
+    // Initial fetch
     fetchGameData()
-    const interval = setInterval(fetchGameData, 2000)
-    return () => clearInterval(interval)
+
+    // Optimized Realtime Subscription
+    // Instead of polling every 2s, we only refresh when something actually changes in the DB
+    const channel = supabase
+      .channel(`game-updates-${gameId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', filter: `gameId=eq.${gameId}` }, 
+        () => {
+          console.log('[Realtime] Change detected, refreshing...')
+          fetchGameData()
+        }
+      )
+      // Special case for Game table updates (like status change)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'Game', filter: `id=eq.${gameId}` },
+        () => fetchGameData()
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [gameId])
 
   const joinUrl = typeof window !== 'undefined' && game?.pin 
