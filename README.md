@@ -36,7 +36,7 @@ src/
 
 1. **Install dependencies:**
    ```bash
-   pnpm install
+   bun install
    ```
 
 2. **Setup Environment:**
@@ -47,12 +47,12 @@ src/
 
 3. **Database Migration:**
    ```bash
-   npx prisma migrate dev
+   bunx prisma migrate dev
    ```
 
 4. **Run Development Server:**
    ```bash
-   pnpm dev
+   bun dev
    ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
@@ -62,5 +62,5 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 This project uses `shadcn/ui`. To add a new component:
 
 ```bash
-npx shadcn@latest add [component-name]
+bunx shadcn@latest add [component-name]
 ```

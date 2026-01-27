@@ -15,6 +15,8 @@ model Game {
   pin       String   @unique // 6 digits unique pin
   hostId    String   // Supabase Auth ID
   status    GameStatus @default(LOBBY)
+  bettingValue Int      @default(0)
+  currentRound Int      @default(0)
   createdAt DateTime @default(now())
   
   // Relations
@@ -36,6 +38,7 @@ model Player {
   gameId       String
   game         Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
   transactions Transaction[]
+  results      RoundResult[]
 }
 
 model Round {
@@ -47,6 +50,21 @@ model Round {
   gameId       String
   game         Game          @relation(fields: [gameId], references: [id], onDelete: Cascade)
   transactions Transaction[]
+  results      RoundResult[]
+}
+
+model RoundResult {
+  id        String          @id @default(uuid())
+  result    RoundResultType
+  createdAt DateTime        @default(now())
+
+  // Relations
+  roundId   String
+  round     Round    @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, playerId])
 }
 
 // Transaction tracks every point change
@@ -84,4 +102,12 @@ enum TransactionType {
   NGU_LINH
   XI_BANG
   QUAC
+}
+
+enum RoundResultType {
+  WIN
+  LOSE
+  DRAW
+  X2
+
 }

@@ -112,3 +112,255 @@ export async function startGame(gameId: string) {
 
     redirect(`/game/${gameId}/host`)
 }
+
+export async function startGameWithBet(gameId: string, bettingValue: number) {
+    // 1. Update Game: ACTIVE, bettingValue, currentRound = 1
+    const game = await prisma.game.update({
+        where: { id: gameId },
+        data: { 
+            status: 'ACTIVE',
+            bettingValue,
+            currentRound: 1
+        }
+    })
+
+    // 2. Create Round 1
+    await prisma.round.create({
+        data: {
+            gameId,
+            roundNumber: 1
+        }
+    })
+
+    // 3. Update Players status
+    await prisma.player.updateMany({
+        where: { gameId },
+        data: { status: 'PLAYING' }
+    })
+    
+    return { success: true }
+}
+
+export async function submitScanResult(gameId: string, playerId: string, result: 'WIN' | 'DRAW' | 'X2') {
+    // Get current round
+    const game = await prisma.game.findUnique({
+        where: { id: gameId },
+        include: { 
+            rounds: { 
+                orderBy: { roundNumber: 'desc' }, 
+                take: 1 
+            } 
+        }
+    })
+    
+    if (!game || !game.rounds[0]) throw new Error("No active round")
+    const roundId = game.rounds[0].id
+    
+    // Upsert result
+    await prisma.roundResult.upsert({
+        where: { roundId_playerId: { roundId, playerId } },
+        create: { roundId, playerId, result },
+        update: { result }
+    })
+    
+    return { success: true }
+}
+
+export async function finishRound(gameId: string) {
+    const game = await prisma.game.findUnique({
+        where: { id: gameId }, 
+        include: {
+            rounds: { 
+                orderBy: { roundNumber: 'desc' }, 
+                take: 1, 
+                include: { 
+                    results: true,
+                    transactions: true 
+                } 
+            },
+            players: true
+        }
+    })
+    
+    if (!game || !game.rounds[0]) throw new Error("Invalid state")
+    const currentRound = game.rounds[0]
+
+    // Idempotency check: If transactions exist, round is already finished
+    if (currentRound.transactions.length > 0) {
+        return { success: true, message: "Round already finished" }
+    }
+
+    const currentRoundResults = currentRound.results
+    const bet = game.bettingValue
+    
+    const processedPlayerIds = new Set(currentRoundResults.map(r => r.playerId))
+    
+    // Use transaction to ensure atomicity
+    await prisma.$transaction(async (tx) => {
+        for (const player of game.players) {
+            if (player.isHost) continue
+            
+            let amount = 0
+            let type = 'LOSE'
+            
+            if (processedPlayerIds.has(player.id)) {
+                const res = currentRoundResults.find(r => r.playerId === player.id)
+                if (res?.result === 'WIN') { 
+                    amount = bet
+                    type = 'WIN' 
+                } else if (res?.result === 'DRAW') { 
+                    amount = 0
+                    type = 'XI_BANG' // Using closest equivalent or just placeholder
+                } else if (res?.result === 'X2') { 
+                    amount = bet * 2
+                    type = 'XI_DACH' // Using closest equivalent
+                } else if (res?.result === 'LOSE') {
+                    // Start of explicit lose handling
+                    amount = -bet
+                    type = 'LOSE'
+                }
+            } else {
+                // Auto lose if not scanned
+                amount = -bet
+                type = 'LOSE'
+            }
+            
+            // Update Player Balance
+            await tx.player.update({
+                 where: { id: player.id },
+                 data: { balance: { increment: amount } }
+            })
+            
+            // Create Transaction Record
+            await tx.transaction.create({
+                data: {
+                    gameId,
+                    playerId: player.id,
+                    amount,
+                    type: type as any, 
+                    roundId: currentRound.id
+                }
+            })
+        }
+    })
+    
+    return { success: true }
+}
+
+export async function nextRound(gameId: string) {
+    await prisma.$transaction(async (tx) => {
+        const game = await tx.game.update({
+            where: { id: gameId },
+            data: { currentRound: { increment: 1 } }
+        })
+        
+        await tx.round.create({
+            data: {
+                gameId,
+                roundNumber: game.currentRound,
+            }
+        })
+    })
+    
+    return { success: true }
+}
+
+export async function endGame(gameId: string) {
+    await prisma.game.update({
+        where: { id: gameId },
+        data: { status: 'FINISHED' }
+    })
+    
+    redirect('/')
+}
+
+export async function devSetupHost() {
+    // 1. Create Game
+    const pin = await generateUniquePin()
+    const game = await prisma.game.create({
+        data: {
+            pin,
+            hostId: "dev-host",
+            status: 'ACTIVE',
+            bettingValue: 100,
+            currentRound: 1
+        }
+    })
+    
+    // 2. Create Round 1
+    await prisma.round.create({
+        data: {
+            gameId: game.id,
+            roundNumber: 1
+        }
+    })
+
+    redirect(`/game/${game.id}/host`)
+}
+
+export async function devSetupPlayer() {
+    // Find any active game or create one
+    let game = await prisma.game.findFirst({
+        where: { status: 'ACTIVE' },
+        orderBy: { createdAt: 'desc' }
+    })
+    
+    if (!game) {
+       const pin = await generateUniquePin()
+       game = await prisma.game.create({
+            data: {
+                pin,
+                hostId: "dev-host",
+                status: 'ACTIVE',
+                bettingValue: 100,
+                currentRound: 1
+            }
+        })
+        await prisma.round.create({
+            data: { gameId: game.id, roundNumber: 1 }
+        })
+    }
+    
+    const randomName = "Player_" + Math.floor(Math.random() * 1000)
+    
+    const player = await prisma.player.create({
+        data: {
+            name: randomName,
+            gameId: game.id,
+            isHost: false,
+            balance: 0,
+            status: 'PLAYING'
+        }
+    })
+    
+    redirect(`/game/${game.id}/player?id=${player.id}`)
+}
+
+export async function simulateTestPlayer(gameId: string) {
+    const player = await prisma.player.create({
+        data: {
+            name: "Test Bot " + Math.floor(Math.random() * 100),
+            gameId: gameId,
+            isHost: false,
+            balance: 0,
+            status: 'PLAYING'
+        }
+    })
+
+    const game = await prisma.game.findUnique({
+        where: { id: gameId },
+        include: { rounds: { orderBy: { roundNumber: 'desc' }, take: 1 } }
+    })
+
+    if (game?.rounds[0]) {
+        await prisma.roundResult.create({
+            data: {
+                roundId: game.rounds[0].id,
+                playerId: player.id,
+                result: 'WIN'
+            }
+        })
+    }
+
+    return { success: true, name: player.name }
+}

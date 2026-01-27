@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { createGame } from "./actions/game-actions"
+import { createGame, devSetupHost, devSetupPlayer } from "./actions/game-actions"
 import Link from "next/link"
 
 export default function Home() {
@@ -71,8 +71,21 @@ export default function Home() {
 
       </div>
       
-      <footer className="mt-16 text-slate-600 text-sm">
-        <p>© 2024 Xì Dách VN. Ready to deal?</p>
+      <footer className="mt-16 text-center">
+        <div className="flex justify-center gap-4 mb-8">
+            <form action={devSetupHost}>
+                <Button variant="ghost" className="text-xs text-yellow-600 border border-yellow-900/30 hover:bg-yellow-900/20">
+                    🛠️ Dev: Instant Host
+                </Button>
+            </form>
+
+            <form action={devSetupPlayer}>
+                 <Button variant="ghost" className="text-xs text-blue-500 border border-blue-900/30 hover:bg-blue-900/20">
+                    🛠️ Dev: Instant Player
+                </Button>
+            </form>
+        </div>
+        <p className="text-slate-600 text-sm">© 2024 Xì Dách VN. Ready to deal?</p>
       </footer>
     </div>
   )

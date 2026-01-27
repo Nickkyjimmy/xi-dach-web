@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -16,6 +18,14 @@ export async function GET(
         players: {
           orderBy: {
             createdAt: 'asc'
+          }
+        },
+        rounds: {
+          orderBy: { roundNumber: 'desc' },
+          take: 1,
+          include: {
+            results: true,
+            transactions: true
           }
         }
       }
@@ -34,9 +44,12 @@ export async function GET(
         id: game.id,
         pin: game.pin,
         status: game.status,
-        createdAt: game.createdAt.toISOString()
+        bettingValue: game.bettingValue,
+        currentRound: game.currentRound,
+        updatedAt: new Date().toISOString()
       },
-      players: game.players
+      players: game.players,
+      currentRound: game.rounds[0] || null
     })
   } catch (error) {
     console.error('Error fetching game:', error)

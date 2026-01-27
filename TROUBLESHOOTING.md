@@ -33,7 +33,7 @@ Visit one of the URLs above with an existing game ID.
 
 ## 🔍 Debugging Tips
 
-Now when you access a game, check your terminal (where `pnpm run dev` is running). You'll see logs like:
+Now when you access a game, check your terminal (where `bun dev` is running). You'll see logs like:
 ```
 [API] Fetching game: abc123...
 [API] Game not found: abc123...  ← if the game doesn't exist
