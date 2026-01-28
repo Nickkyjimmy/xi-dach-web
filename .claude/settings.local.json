@@ -4,7 +4,8 @@
       "Bash(tree:*)",
       "Bash(bun add:*)",
       "Bash(bun run lint:*)",
-      "Bash(bun run build:*)"
+      "Bash(bun run build:*)",
+      "Bash(bunx prisma generate:*)"
     ]
   }
 }
