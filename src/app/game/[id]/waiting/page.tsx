@@ -4,62 +4,63 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
+import { PageLoader } from '@/components/ui/spinner'
+import { slideUp, scaleIn } from '@/lib/animations'
+import { CheckCircle, AlertCircle } from 'lucide-react'
 
 export default function WaitingRoomPage() {
   const params = useParams()
   const router = useRouter()
   const gameId = params.id as string
-  
+
   const [playerName, setPlayerName] = useState('')
   const [gamePin, setGamePin] = useState('')
   const [isListening, setIsListening] = useState(false)
-  
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
+
   const supabase = createClient()
 
   useEffect(() => {
-    // Get player info from localStorage
     const playerId = localStorage.getItem('playerId')
     const storedGameId = localStorage.getItem('gameId')
-    
+
     if (!playerId || storedGameId !== gameId) {
-      // If no player ID or wrong game, redirect to join
       router.push(`/join?pin=${gamePin || ''}`)
       return
     }
 
-    // Fetch initial game and player data
     async function fetchData() {
       try {
         const response = await fetch(`/api/game/${gameId}`)
         const data = await response.json()
-        
+
         if (data.error) {
-          router.push('/join')
+          setError('Game not found')
+          setTimeout(() => router.push('/join'), 2000)
           return
         }
 
         setGamePin(data.game.pin)
-        
-        // Check if game already started
+
         if (data.game.status === 'ACTIVE') {
           router.push(`/game/${gameId}/player`)
           return
         }
 
-        // Find player name
-        const player = data.players.find((p: any) => p.id === playerId)
+        const player = data.players.find((p: { id: string }) => p.id === playerId)
         if (player) {
           setPlayerName(player.name)
         }
-      } catch (error) {
-        console.error('Error fetching game data:', error)
+        setIsLoading(false)
+      } catch {
+        setError('Failed to load game data')
+        setIsLoading(false)
       }
     }
 
     fetchData()
-    setIsListening(true)
 
-    // Subscribe to real-time game status changes
     const channel = supabase
       .channel('game-status')
       .on(
@@ -71,85 +72,93 @@ export default function WaitingRoomPage() {
           filter: `id=eq.${gameId}`
         },
         (payload) => {
-          const newStatus = (payload.new as any).status
-          console.log('[WaitingRoom] Game status changed to:', newStatus)
-          
+          const newStatus = (payload.new as { status: string }).status
           if (newStatus === 'ACTIVE') {
-            // Game started! Redirect to player view
             router.push(`/game/${gameId}/player`)
           }
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          setIsListening(true)
+        } else if (status === 'CHANNEL_ERROR') {
+          setError('Connection error. Please refresh.')
+        }
+      })
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [gameId, router, supabase])
+  }, [gameId, router, supabase, gamePin])
+
+  if (isLoading) {
+    return <PageLoader message="Loading waiting room..." />
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-game-gradient flex items-center justify-center p-4">
+        <motion.div
+          variants={scaleIn}
+          initial="hidden"
+          animate="visible"
+          className="glass-card rounded-2xl p-6 text-center max-w-sm w-full"
+        >
+          <AlertCircle className="w-12 h-12 mx-auto mb-3 text-[var(--color-error)]" />
+          <p className="text-[var(--color-cream)] font-semibold">{error}</p>
+          <p className="text-[var(--color-cream)]/50 text-sm mt-2">Redirecting...</p>
+        </motion.div>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-500 via-teal-600 to-cyan-600 flex items-center justify-center p-4">
-      <div className="max-w-2xl w-full text-center">
-        {/* Success Animation */}
+    <div className="min-h-screen bg-game-gradient flex items-center justify-center p-4">
+      <div className="max-w-sm w-full text-center">
+        {/* Success Icon */}
         <motion.div
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ type: 'spring', stiffness: 200, damping: 15 }}
-          className="mb-8"
+          variants={scaleIn}
+          initial="hidden"
+          animate="visible"
+          className="mb-6"
         >
-          <div className="w-32 h-32 mx-auto mb-6 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center shadow-2xl">
-            <motion.span
-              className="text-7xl"
-              animate={{ rotate: [0, 10, -10, 0] }}
-              transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
-            >
-              ✅
-            </motion.span>
+          <div className="w-20 h-20 mx-auto mb-4 bg-[var(--color-success)]/20 rounded-full flex items-center justify-center shadow-lg">
+            <CheckCircle className="w-10 h-10 text-[var(--color-success)]" />
           </div>
         </motion.div>
 
         {/* Main Content */}
         <motion.div
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="space-y-6"
+          variants={slideUp}
+          initial="hidden"
+          animate="visible"
+          className="space-y-4"
         >
-          <h1 className="text-5xl md:text-6xl font-black text-white mb-4">
-            You're In!
+          <h1 className="text-3xl font-black text-[var(--color-cream)]">
+            You&apos;re In!
           </h1>
-          
+
           {playerName && (
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.4 }}
-              className="inline-block bg-white/20 backdrop-blur-md px-6 py-3 rounded-full"
-            >
-              <p className="text-2xl font-bold text-white">
-                Welcome, <span className="text-yellow-300">{playerName}</span>!
+            <div className="inline-block bg-[var(--color-dark-secondary)]/70 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
+              <p className="text-base font-semibold text-[var(--color-cream)]">
+                Welcome, <span className="text-[var(--color-accent)]">{playerName}</span>!
               </p>
-            </motion.div>
+            </div>
           )}
 
-          <motion.div
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.6 }}
-            className="mt-8 space-y-4"
-          >
-            <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 shadow-2xl ring-1 ring-white/20">
-              <p className="text-2xl font-semibold text-white mb-2">
+          <div className="mt-6 space-y-3">
+            <div className="glass-card rounded-2xl p-5 shadow-md">
+              <p className="text-base font-semibold text-[var(--color-cream)] mb-1">
                 See your name on the host screen?
               </p>
-              <p className="text-white/80 text-lg">
+              <p className="text-[var(--color-cream)]/60 text-sm">
                 You should appear in the lobby!
               </p>
-              
+
               {gamePin && (
-                <div className="mt-6 pt-6 border-t border-white/20">
-                  <p className="text-white/60 text-sm mb-2">Game PIN</p>
-                  <p className="text-4xl font-mono font-black text-yellow-300 tracking-wider">
+                <div className="mt-4 pt-4 border-t border-[var(--color-cream)]/10">
+                  <p className="text-[var(--color-cream)]/50 text-xs mb-1">Game PIN</p>
+                  <p className="text-2xl font-mono font-black text-[var(--color-accent)] tracking-wider">
                     {gamePin}
                   </p>
                 </div>
@@ -157,52 +166,47 @@ export default function WaitingRoomPage() {
             </div>
 
             {/* Waiting Animation */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 1 }}
-              className="bg-white/10 backdrop-blur-lg rounded-2xl p-6"
-            >
-              <div className="flex items-center justify-center space-x-2">
-                <div className="flex space-x-2">
+            <div className="glass-card rounded-xl p-4">
+              <div className="flex items-center justify-center gap-3">
+                <div className="flex gap-1">
                   {[0, 1, 2].map((i) => (
                     <motion.div
                       key={i}
-                      className="w-3 h-3 bg-white rounded-full"
+                      className="w-2 h-2 bg-[var(--color-accent)] rounded-full"
                       animate={{
-                        scale: [1, 1.5, 1],
+                        scale: [1, 1.3, 1],
                         opacity: [0.5, 1, 0.5]
                       }}
                       transition={{
                         repeat: Infinity,
-                        duration: 1.5,
-                        delay: i * 0.2
+                        duration: 1.2,
+                        delay: i * 0.15
                       }}
                     />
                   ))}
                 </div>
-                <p className="text-white font-semibold ml-4">
+                <p className="text-[var(--color-cream)] font-medium text-sm">
                   Waiting for host to start...
                 </p>
               </div>
-              
+
               {isListening && (
-                <p className="text-white/60 text-xs mt-3">
-                  🔴 Live • Auto-starting when ready
+                <p className="text-[var(--color-cream)]/40 text-xs mt-2">
+                  Live connection active
                 </p>
               )}
-            </motion.div>
-          </motion.div>
+            </div>
+          </div>
         </motion.div>
 
-        {/* Fun Tip */}
+        {/* Tip */}
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1.5 }}
-          className="mt-12 text-white/60 text-sm"
+          variants={slideUp}
+          initial="hidden"
+          animate="visible"
+          className="mt-8 text-[var(--color-cream)]/50 text-xs"
         >
-          <p>💡 Tip: Keep this tab open! The game will start automatically.</p>
+          <p>Keep this tab open! The game will start automatically.</p>
         </motion.div>
       </div>
     </div>

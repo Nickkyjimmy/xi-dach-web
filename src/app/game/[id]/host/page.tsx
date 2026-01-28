@@ -2,14 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { QrCode, Info, Banknote, Trophy, Users, ChevronRight, RefreshCw, Skull, LogOut } from 'lucide-react'
+import { QrCode, Banknote, Trophy, Users, ChevronRight, RefreshCw, Skull, LogOut } from 'lucide-react'
 import { QRCodeGenerator } from '@/components/game/qrcode-generator'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -18,37 +17,68 @@ import { startGameWithBet, submitScanResult, finishRound, nextRound, simulateTes
 import { QRScanner } from '@/components/game/qr-scanner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-
 import { createClient } from '@/lib/supabase/client'
+import { PageLoader, Spinner } from '@/components/ui/spinner'
+import { motion } from 'framer-motion'
+import { slideUp, staggerContainer, staggerItem } from '@/lib/animations'
+import { toast } from 'sonner'
+
+interface Player {
+  id: string
+  name: string
+  isHost: boolean
+  balance: number
+}
+
+interface RoundResult {
+  playerId: string
+  result: string
+}
+
+interface Transaction {
+  playerId: string
+  amount: number
+}
+
+interface Round {
+  results: RoundResult[]
+  transactions: Transaction[]
+}
+
+interface Game {
+  id: string
+  pin: string
+  status: string
+  currentRound: number
+  bettingValue: number
+}
 
 export default function HostGamePage() {
   const params = useParams()
   const gameId = params.id as string
   const supabase = createClient()
-  
-  const [game, setGame] = useState<any>(null)
-  const [players, setPlayers] = useState<any[]>([])
-  const [currentRound, setCurrentRound] = useState<any>(null)
-  
+
+  const [game, setGame] = useState<Game | null>(null)
+  const [players, setPlayers] = useState<Player[]>([])
+  const [currentRound, setCurrentRound] = useState<Round | null>(null)
+
   const [bettingValue, setBettingValue] = useState<number>(100)
   const [isJoinOpen, setIsJoinOpen] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [scanType, setScanType] = useState<'WIN' | 'DRAW' | 'X2'>('WIN')
   const [isLoading, setIsLoading] = useState(false)
+  const [pageLoading, setPageLoading] = useState(true)
 
-  // Fetch Game Data directly from Supabase (Bypass Vercel API for 0 execution cost)
   const fetchGameData = async () => {
     try {
-      // 1. Fetch Game
       const { data: gameData, error: gameError } = await supabase
         .from('Game')
         .select('*')
         .eq('id', gameId)
         .single()
-      
+
       if (gameError || !gameData) throw gameError
 
-      // 2. Fetch Players
       const { data: playerData, error: playersError } = await supabase
         .from('Player')
         .select('*')
@@ -57,7 +87,6 @@ export default function HostGamePage() {
 
       if (playersError) throw playersError
 
-      // 3. Fetch Latest Round with Results and Transactions
       const { data: roundData, error: roundError } = await supabase
         .from('Round')
         .select(`
@@ -70,33 +99,31 @@ export default function HostGamePage() {
         .limit(1)
 
       if (roundError) throw roundError
-      
+
       setGame(gameData)
       setPlayers(playerData || [])
       setCurrentRound(roundData?.[0] || null)
-      
+
     } catch (error) {
       console.error('Error fetching game data via Supabase:', error)
+      toast.error('Failed to load game data')
+    } finally {
+      setPageLoading(false)
     }
   }
 
   useEffect(() => {
-    // Initial fetch
     fetchGameData()
 
-    // Optimized Realtime Subscription
-    // Instead of polling every 2s, we only refresh when something actually changes in the DB
     const channel = supabase
       .channel(`game-updates-${gameId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', filter: `gameId=eq.${gameId}` }, 
+        { event: '*', schema: 'public', filter: `gameId=eq.${gameId}` },
         () => {
-          console.log('[Realtime] Change detected, refreshing...')
           fetchGameData()
         }
       )
-      // Special case for Game table updates (like status change)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'Game', filter: `id=eq.${gameId}` },
@@ -109,388 +136,400 @@ export default function HostGamePage() {
     }
   }, [gameId])
 
-  const joinUrl = typeof window !== 'undefined' && game?.pin 
-    ? `${window.location.origin}/join?pin=${game.pin}` 
+  const joinUrl = typeof window !== 'undefined' && game?.pin
+    ? `${window.location.origin}/join?pin=${game.pin}`
     : ''
 
-  // Actions
   const handleStartGame = async () => {
     setIsLoading(true)
     try {
-        await startGameWithBet(gameId, Number(bettingValue))
-        // Optimistic update will happen on next poll or we can force fetch
-        // give it a sec to propagate
-        setTimeout(fetchGameData, 500)
-    } catch (err) {
-        alert("Failed to start game")
+      await startGameWithBet(gameId, Number(bettingValue))
+      toast.success('Game started!')
+      setTimeout(fetchGameData, 500)
+    } catch {
+      toast.error('Failed to start game')
     } finally {
-        setIsLoading(false)
+      setIsLoading(false)
     }
   }
 
   const openScanner = (type: 'WIN' | 'DRAW' | 'X2') => {
-      setScanType(type)
-      setShowScanner(true)
+    setScanType(type)
+    setShowScanner(true)
   }
 
   const handleScan = async (decodedText: string) => {
-      // Assuming decodedText is playerId or contains it
+    try {
+      let playerId = decodedText
       try {
-          // Parse if JSON
-          let playerId = decodedText
-          try {
-              const parsed = JSON.parse(decodedText)
-              if (parsed.playerId) playerId = parsed.playerId
-          } catch (e) {
-              // Not JSON, use raw text
-          }
-
-          // Verify player belongs to game
-          const player = players.find(p => p.id === playerId)
-          if (!player) {
-              console.log("Player not found in this game:", playerId)
-              // Optional: Show error toast
-              return
-          }
-
-          await submitScanResult(gameId, playerId, scanType)
-          // Play sound?
-          // Don't close scanner, allow multi scan
-          // Force fetch to show updated list
-          fetchGameData()
-      } catch (err) {
-          console.error("Scan submit error", err)
+        const parsed = JSON.parse(decodedText)
+        if (parsed.playerId) playerId = parsed.playerId
+      } catch {
+        // Not JSON, use raw text
       }
+
+      const player = players.find(p => p.id === playerId)
+      if (!player) {
+        toast.error('Player not found in this game')
+        return
+      }
+
+      await submitScanResult(gameId, playerId, scanType)
+      toast.success(`${player.name} - ${scanType}`)
+      fetchGameData()
+    } catch {
+      toast.error('Scan failed')
+    }
   }
 
   const handleFinishRound = async () => {
-      if (!confirm("Are you sure you want to end this round? Unscanned players will lose.")) return
-      setIsLoading(true)
-      try {
-          await finishRound(gameId)
-          await fetchGameData()
-      } catch (err) {
-          alert("Error finishing round")
-      } finally {
-          setIsLoading(false)
-      }
+    if (!confirm("Are you sure you want to end this round? Unscanned players will lose.")) return
+    setIsLoading(true)
+    try {
+      await finishRound(gameId)
+      toast.success('Round finished!')
+      await fetchGameData()
+    } catch {
+      toast.error('Error finishing round')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleNextRound = async () => {
-       setIsLoading(true)
-       try {
-           await nextRound(gameId)
-           await fetchGameData()
-       } catch (err) {
-           alert("Error starting next round")
-       } finally {
-           setIsLoading(false)
-       }
+    setIsLoading(true)
+    try {
+      await nextRound(gameId)
+      toast.success('New round started!')
+      await fetchGameData()
+    } catch {
+      toast.error('Error starting next round')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleSimulatePlayer = async () => {
-      setIsLoading(true)
-      try {
-          await simulateTestPlayer(gameId)
-          fetchGameData()
-      } catch (err) {
-          console.error("Simulation failed", err)
-      } finally {
-          setIsLoading(false)
-      }
+    setIsLoading(true)
+    try {
+      await simulateTestPlayer(gameId)
+      toast.success('Bot player added')
+      fetchGameData()
+    } catch {
+      toast.error('Simulation failed')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleEndGame = async () => {
-      if (!confirm("Are you sure you want to end the entire game? This will return everyone to the home page.")) return
-      setIsLoading(true)
-      try {
-          await endGame(gameId)
-      } catch (err) {
-          alert("Error ending game")
-      } finally {
-          setIsLoading(false)
-      }
+    if (!confirm("Are you sure you want to end the entire game?")) return
+    setIsLoading(true)
+    try {
+      await endGame(gameId)
+      toast.success('Game ended')
+    } catch {
+      toast.error('Error ending game')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  // Derived State
-  // Round is finished if it has transactions
   const isRoundFinished = currentRound?.transactions && currentRound.transactions.length > 0
   const activeRoundResults = currentRound?.results || []
 
-  // Renders
-  if (!game) return <div className="text-white p-10">Loading...</div>
+  if (pageLoading) return <PageLoader message="Loading host controls..." />
+  if (!game) return <PageLoader message="Game not found..." />
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-4 pb-20">
-      
+    <div className="min-h-screen bg-game-gradient-subtle p-4 pb-20">
+
       {/* Scanner Overlay */}
       {showScanner && (
-          <QRScanner 
-            onScan={handleScan} 
-            onClose={() => setShowScanner(false)} 
-            title={`Scanning for ${scanType}`}
-          />
+        <QRScanner
+          onScan={handleScan}
+          onClose={() => setShowScanner(false)}
+          title={`Scanning for ${scanType}`}
+        />
       )}
 
       {/* Header */}
-      <div className="max-w-4xl mx-auto mb-8 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-black flex items-center gap-2">
-              XiDach Host <Badge variant="outline" className="text-yellow-400 border-yellow-400">ADMIN</Badge>
-            </h1>
-            <p className="text-slate-400 text-sm">PIN: <span className="text-white font-mono font-bold tracking-widest">{game.pin}</span></p>
-          </div>
-          
-          <div className="flex gap-2">
-            <Button 
-                size="sm" 
-                variant="outline" 
-                className="bg-purple-900/40 border-purple-500/30 text-purple-300 hover:bg-purple-800/40"
-                onClick={handleSimulatePlayer}
-                disabled={isLoading}
-            >
-                Bot Join & Win
-            </Button>
+      <motion.div
+        variants={slideUp}
+        initial="hidden"
+        animate="visible"
+        className="max-w-2xl mx-auto mb-6 flex items-center justify-between"
+      >
+        <div>
+          <h1 className="text-xl font-black text-[var(--color-cream)] flex items-center gap-2">
+            Host Controls
+            <Badge className="bg-[var(--color-warning)] text-[var(--color-dark)] text-xs">ADMIN</Badge>
+          </h1>
+          <p className="text-[var(--color-cream)]/60 text-sm">
+            PIN: <span className="font-mono font-bold tracking-widest">{game.pin}</span>
+          </p>
+        </div>
 
-            <Dialog open={isJoinOpen} onOpenChange={setIsJoinOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm" variant="outline" className="gap-2">
-                  <QrCode className="w-4 h-4" /> Join QR
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="bg-slate-800 text-white border-slate-700">
-                 <DialogHeader>
-                     <DialogTitle>Join Game</DialogTitle>
-                 </DialogHeader>
-                 <div className="flex flex-col items-center p-4 space-y-4">
-                     <div className="text-4xl font-mono font-black text-yellow-400 tracking-[0.5em]">{game.pin}</div>
-                     {joinUrl && (
-                      <div className="bg-white p-2 rounded-xl">
-                          <QRCodeGenerator value={joinUrl} size={200} />
-                      </div>
-                     )}
-                 </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-      </div>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="bg-[var(--color-accent)]/20 border-[var(--color-accent)]/30 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/30 text-xs h-8"
+            onClick={handleSimulatePlayer}
+            disabled={isLoading}
+          >
+            Bot Join
+          </Button>
 
-      <div className="max-w-4xl mx-auto space-y-6">
-          
-          {/* LOBBY STATE */}
-          {game.status === 'LOBBY' && (
-              <Card className="bg-slate-800 border-slate-700">
-                  <CardHeader>
-                      <CardTitle className="text-white flex items-center gap-2">
-                          <Banknote className="text-green-400" /> Game Setup
-                      </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                      <div className="space-y-2">
-                          <label className="text-sm text-slate-400">Betting Value per Round</label>
-                          <div className="flex gap-4">
-                              <Input 
-                                type="number" 
-                                value={bettingValue} 
-                                onChange={(e) => setBettingValue(Number(e.target.value))}
-                                className="bg-slate-900 border-slate-600 text-white text-lg"
-                              />
-                          </div>
-                      </div>
-                      
-                      <div className="pt-4">
-                          <Button 
-                            size="lg" 
-                            className="w-full bg-green-600 hover:bg-green-700 font-bold text-lg"
-                            onClick={handleStartGame}
-                            disabled={isLoading}
-                          >
-                             Start Game
-                          </Button>
-                      </div>
+          <Dialog open={isJoinOpen} onOpenChange={setIsJoinOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline" className="gap-1 h-8 text-xs border-[var(--color-cream)]/20 text-[var(--color-cream)]">
+                <QrCode className="w-3 h-3" /> QR
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="glass-card border-0 max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="text-[var(--color-cream)]">Join Game</DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-col items-center p-4 space-y-4">
+                <div className="text-3xl font-mono font-black text-[var(--color-accent)] tracking-[0.3em]">{game.pin}</div>
+                {joinUrl && (
+                  <div className="bg-[var(--color-cream)] p-3 rounded-xl shadow-md">
+                    <QRCodeGenerator value={joinUrl} size={160} />
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </motion.div>
 
-                      <div className="mt-8">
-                          <h3 className="text-slate-400 font-bold mb-2">Players in Lobby ({players.length})</h3>
-                          <div className="grid grid-cols-2 gap-2">
-                              {players.map(p => (
-                                  <div key={p.id} className="bg-slate-900 p-3 rounded-lg flex items-center gap-2">
-                                      <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                                      {p.name}
-                                  </div>
-                              ))}
-                          </div>
-                      </div>
-                  </CardContent>
-              </Card>
-          )}
+      <div className="max-w-2xl mx-auto space-y-4">
 
-          {/* ACTIVE GAME STATE */}
-          {game.status === 'ACTIVE' && (
-              <>
-                {/* Round Info */}
-                <div className="bg-gradient-to-r from-indigo-900 to-purple-900 p-6 rounded-2xl shadow-xl flex justify-between items-center text-white">
-                    <div>
-                        <p className="text-indigo-200 text-sm uppercase font-bold tracking-wider">Current Round</p>
-                        <p className="text-4xl font-black">#{game.currentRound}</p>
-                    </div>
-                    <div className="text-right">
-                        <p className="text-indigo-200 text-sm uppercase font-bold tracking-wider">Betting Value</p>
-                        <p className="text-4xl font-black text-green-400">${game.bettingValue}</p>
-                    </div>
+        {/* LOBBY STATE */}
+        {game.status === 'LOBBY' && (
+          <motion.div variants={slideUp} initial="hidden" animate="visible">
+            <Card className="glass-card border-0 shadow-md">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-[var(--color-cream)] flex items-center gap-2 text-base">
+                  <Banknote className="text-[var(--color-success)] w-5 h-5" /> Game Setup
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm text-[var(--color-cream)]/60">Betting Value per Round</label>
+                  <Input
+                    type="number"
+                    value={bettingValue}
+                    onChange={(e) => setBettingValue(Number(e.target.value))}
+                    className="bg-[var(--color-dark)]/60 border-[var(--color-accent)]/30 text-[var(--color-cream)] text-lg h-12"
+                  />
                 </div>
 
-                {/* Round Finished - LEADERBOARD */}
-                {isRoundFinished ? (
-                   <Card className="bg-slate-800 border-none shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300">
-                       <CardHeader className="bg-yellow-500/10 border-b border-yellow-500/20">
-                           <CardTitle className="text-yellow-400 flex items-center gap-2 text-2xl">
-                               <Trophy className="w-6 h-6" /> Round Finished!
-                           </CardTitle>
-                       </CardHeader>
-                       <CardContent className="p-0">
-                           <div className="divide-y divide-slate-700">
-                               {players
-                                .sort((a, b) => b.balance - a.balance)
-                                .map((p, idx) => {
-                                   const transaction = currentRound?.transactions?.find((t: any) => t.playerId === p.id);
-                                   const roundAmount = transaction?.amount || 0;
-                                   
-                                   return (
-                                       <div key={p.id} className="p-4 flex items-center justify-between hover:bg-white/5 transition-colors">
-                                           <div className="flex items-center gap-4">
-                                               <span className={`flex items-center justify-center w-8 h-8 rounded-full font-bold flex-shrink-0 ${
-                                                   idx === 0 ? 'bg-yellow-500 text-black' : 
-                                                   idx === 1 ? 'bg-slate-300 text-black' : 
-                                                   idx === 2 ? 'bg-amber-700 text-white' : 'bg-slate-700 text-slate-400'
-                                               }`}>
-                                                   {idx + 1}
-                                               </span>
-                                               <div className="flex flex-col">
-                                                   <span className="font-bold text-lg leading-tight">{p.name}</span>
-                                                   {transaction && (
-                                                       <span className={`text-[10px] font-black uppercase tracking-widest ${roundAmount > 0 ? 'text-green-400' : roundAmount < 0 ? 'text-red-400' : 'text-slate-400'}`}>
-                                                           {roundAmount > 0 ? 'Won' : roundAmount < 0 ? 'Lost' : 'Draw'}: {roundAmount > 0 ? '+' : ''}{roundAmount}
-                                                       </span>
-                                                   )}
-                                                </div>
-                                           </div>
-                                           <div className="text-right">
-                                               <p className="text-[10px] text-slate-500 uppercase font-black tracking-tighter mb-1">Total Points</p>
-                                               <span className={`font-mono font-bold text-xl ${p.balance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                                   {p.balance > 0 ? '+' : ''}{p.balance}
-                                               </span>
-                                           </div>
-                                       </div>
-                                   );
-                                })}
-                           </div>
-                           
-                           <div className="p-6 bg-slate-900/50 space-y-3">
-                               <Button 
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-lg py-6 shadow-lg shadow-blue-900/20"
-                                onClick={handleNextRound}
-                                disabled={isLoading}
-                               >
-                                   Start Next Round <ChevronRight className="ml-2 w-5 h-5" />
-                               </Button>
+                <Button
+                  className="w-full h-12 bg-[var(--color-success)] hover:bg-[var(--color-success)]/90 text-[var(--color-dark)] font-bold text-sm"
+                  onClick={handleStartGame}
+                  disabled={isLoading}
+                >
+                  {isLoading ? <Spinner size="sm" className="text-[var(--color-dark)]" /> : 'Start Game'}
+                </Button>
 
-                               <Button 
-                                variant="outline"
-                                className="w-full border-slate-700 hover:bg-red-900/20 hover:text-red-400 hover:border-red-900/50 py-6"
-                                onClick={handleEndGame}
-                                disabled={isLoading}
-                               >
-                                   <LogOut className="mr-2 w-4 h-4" /> End Game Session
-                               </Button>
-                           </div>
-                       </CardContent>
-                   </Card>
-                ) : (
-                    /* Active Round Controls */
-                    <div className="space-y-6">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <Button 
-                                onClick={() => openScanner('WIN')}
-                                className="h-32 text-2xl font-black bg-green-600 hover:bg-green-500 border-b-4 border-green-800 active:border-b-0 active:translate-y-1 transition-all rounded-xl"
-                            >
-                                <div className="flex flex-col items-center gap-2">
-                                    <Trophy className="w-8 h-8" />
-                                    WIN
-                                    <span className="text-sm font-normal opacity-80">+${game.bettingValue}</span>
-                                </div>
-                            </Button>
-                            
-                            <Button 
-                                onClick={() => openScanner('DRAW')}
-                                className="h-32 text-2xl font-black bg-slate-600 hover:bg-slate-500 border-b-4 border-slate-800 active:border-b-0 active:translate-y-1 transition-all rounded-xl"
-                            >
-                                <div className="flex flex-col items-center gap-2">
-                                    <RefreshCw className="w-8 h-8" />
-                                    DRAW
-                                    <span className="text-sm font-normal opacity-80">+0</span>
-                                </div>
-                            </Button>
+                <div className="pt-4 border-t border-[var(--color-cream)]/10">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Users className="w-4 h-4 text-[var(--color-cream)]/60" />
+                    <h3 className="text-[var(--color-cream)]/60 font-semibold text-sm">Players ({players.length})</h3>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {players.map(p => (
+                      <div key={p.id} className="bg-[var(--color-dark)]/50 p-2 rounded-lg flex items-center gap-2 text-sm">
+                        <div className="w-2 h-2 rounded-full bg-[var(--color-success)]"></div>
+                        <span className="text-[var(--color-cream)] truncate">{p.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
 
-                            <Button 
-                                onClick={() => openScanner('X2')}
-                                className="h-32 text-2xl font-black bg-purple-600 hover:bg-purple-500 border-b-4 border-purple-800 active:border-b-0 active:translate-y-1 transition-all rounded-xl"
-                            >
-                                <div className="flex flex-col items-center gap-2">
-                                    <span className="text-3xl">x2</span>
-                                    PRIZE
-                                    <span className="text-sm font-normal opacity-80 text-center">+${game.bettingValue * 2}</span>
-                                </div>
-                            </Button>
-                        </div>
+        {/* ACTIVE GAME STATE */}
+        {game.status === 'ACTIVE' && (
+          <>
+            {/* Round Info */}
+            <motion.div
+              variants={slideUp}
+              initial="hidden"
+              animate="visible"
+              className="glass-card p-5 rounded-2xl flex justify-between items-center"
+            >
+              <div>
+                <p className="text-[var(--color-cream)]/50 text-xs uppercase font-bold tracking-wider">Round</p>
+                <p className="text-3xl font-black text-[var(--color-cream)]">#{game.currentRound}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[var(--color-cream)]/50 text-xs uppercase font-bold tracking-wider">Bet</p>
+                <p className="text-3xl font-black text-[var(--color-success)]">${game.bettingValue}</p>
+              </div>
+            </motion.div>
 
-                        {/* Scanned Players List */}
-                        <Card className="bg-slate-800 border-slate-700">
-                             <CardHeader>
-                                 <CardTitle className="text-white text-sm uppercase tracking-wider flex justify-between">
-                                     <span>Round Status</span>
-                                     <span>{activeRoundResults.length} / {players.filter(p => !p.isHost).length} Scanned</span>
-                                 </CardTitle>
-                             </CardHeader>
-                             <CardContent>
-                                 <div className="grid gap-2">
-                                     {players.map(p => {
-                                         if (p.isHost) return null
-                                         const result = activeRoundResults.find((r: any) => r.playerId === p.id)?.result
-                                         
-                                         return (
-                                             <div key={p.id} className={`p-3 rounded-lg border flex justify-between items-center ${
-                                                 result ? 'bg-slate-700/50 border-slate-600' : 'bg-slate-900 border-slate-800 opacity-50'
-                                             }`}>
-                                                 <div className="font-medium">{p.name}</div>
-                                                 <div>
-                                                     {result === 'WIN' && <Badge className="bg-green-500">WIN</Badge>}
-                                                     {result === 'DRAW' && <Badge className="bg-gray-500">DRAW</Badge>}
-                                                     {result === 'X2' && <Badge className="bg-purple-500">X2 PRIZE</Badge>}
-                                                     {!result && <Badge variant="outline" className="text-slate-500 border-slate-600">Waiting...</Badge>}
-                                                 </div>
-                                             </div>
-                                         )
-                                     })}
-                                 </div>
-                             </CardContent>
-                        </Card>
-                        
-                        <div className="pt-4 border-t border-slate-800">
-                            <Button 
-                                variant="destructive" 
-                                size="lg" 
-                                className="w-full flex items-center justify-center gap-2 py-8 text-xl font-bold"
-                                onClick={handleFinishRound}
-                                disabled={isLoading}
+            {/* Round Finished - LEADERBOARD */}
+            {isRoundFinished ? (
+              <motion.div variants={slideUp} initial="hidden" animate="visible">
+                <Card className="glass-card border-0 shadow-lg overflow-hidden">
+                  <CardHeader className="bg-[var(--color-warning)]/20 border-b border-[var(--color-warning)]/20 py-3">
+                    <CardTitle className="text-[var(--color-cream)] flex items-center gap-2 text-lg">
+                      <Trophy className="w-5 h-5 text-[var(--color-warning)]" /> Round Finished!
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <motion.div
+                      variants={staggerContainer}
+                      initial="hidden"
+                      animate="visible"
+                      className="divide-y divide-[var(--color-cream)]/10"
+                    >
+                      {players
+                        .sort((a, b) => b.balance - a.balance)
+                        .map((p, idx) => {
+                          const transaction = currentRound?.transactions?.find((t) => t.playerId === p.id);
+                          const roundAmount = transaction?.amount || 0;
+
+                          return (
+                            <motion.div
+                              key={p.id}
+                              variants={staggerItem}
+                              className="p-3 flex items-center justify-between hover:bg-[var(--color-dark-secondary)]/50 transition-colors"
                             >
-                                <Skull className="w-6 h-6" /> END ROUND & SUM UP
-                            </Button>
-                            <p className="text-center text-slate-500 text-sm mt-3">Unscanned players will automatically LOSE</p>
-                        </div>
+                              <div className="flex items-center gap-3">
+                                <span className={`flex items-center justify-center w-7 h-7 rounded-full text-sm font-bold flex-shrink-0 ${idx === 0 ? 'bg-[var(--color-warning)] text-[var(--color-dark)]' :
+                                  idx === 1 ? 'bg-[var(--color-accent)] text-[var(--color-dark)]' :
+                                    idx === 2 ? 'bg-[var(--color-accent-dark)] text-[var(--color-cream)]' : 'bg-[var(--color-dark-secondary)] text-[var(--color-cream)]/50'
+                                  }`}>
+                                  {idx + 1}
+                                </span>
+                                <div className="flex flex-col">
+                                  <span className="font-bold text-sm text-[var(--color-cream)] leading-tight">{p.name}</span>
+                                  {transaction && (
+                                    <span className={`text-[10px] font-bold uppercase tracking-wide ${roundAmount > 0 ? 'text-[var(--color-success-light)]' : roundAmount < 0 ? 'text-[var(--color-error-light)]' : 'text-[var(--color-cream)]/50'}`}>
+                                      {roundAmount > 0 ? 'Won' : roundAmount < 0 ? 'Lost' : 'Draw'}: {roundAmount > 0 ? '+' : ''}{roundAmount}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-[10px] text-[var(--color-cream)]/40 uppercase font-bold mb-0.5">Total</p>
+                                <span className={`font-mono font-bold text-lg ${p.balance >= 0 ? 'text-[var(--color-success-light)]' : 'text-[var(--color-error-light)]'}`}>
+                                  {p.balance > 0 ? '+' : ''}{p.balance}
+                                </span>
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+                    </motion.div>
+
+                    <div className="p-4 bg-[var(--color-dark)]/30 space-y-2">
+                      <Button
+                        className="w-full h-12 bg-[var(--pastel-sky)] hover:bg-[var(--pastel-sky)]/90 text-[var(--color-dark)] font-bold text-sm"
+                        onClick={handleNextRound}
+                        disabled={isLoading}
+                      >
+                        {isLoading ? <Spinner size="sm" className="text-[var(--color-dark)]" /> : (
+                          <>Next Round <ChevronRight className="ml-1 w-4 h-4" /></>
+                        )}
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        className="w-full h-10 border-[var(--color-error)]/30 text-[var(--color-error)] hover:bg-[var(--color-error)]/20 text-sm"
+                        onClick={handleEndGame}
+                        disabled={isLoading}
+                      >
+                        <LogOut className="mr-1 w-3 h-3" /> End Game Session
+                      </Button>
                     </div>
-                )}
-              </>
-          )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ) : (
+              /* Active Round Controls */
+              <motion.div variants={slideUp} initial="hidden" animate="visible" className="space-y-4">
+                <div className="grid grid-cols-3 gap-2">
+                  <Button
+                    onClick={() => openScanner('WIN')}
+                    className="h-24 text-base font-black bg-[var(--color-success)] hover:bg-[var(--color-success)]/90 text-[var(--color-dark)] rounded-xl flex-col gap-1"
+                  >
+                    <Trophy className="w-6 h-6" />
+                    WIN
+                    <span className="text-xs font-normal opacity-80">+${game.bettingValue}</span>
+                  </Button>
+
+                  <Button
+                    onClick={() => openScanner('DRAW')}
+                    className="h-24 text-base font-black bg-[var(--color-dark-secondary)] hover:bg-[var(--color-dark-secondary)]/90 text-[var(--color-cream)] rounded-xl flex-col gap-1"
+                  >
+                    <RefreshCw className="w-6 h-6" />
+                    DRAW
+                    <span className="text-xs font-normal opacity-80">+0</span>
+                  </Button>
+
+                  <Button
+                    onClick={() => openScanner('X2')}
+                    className="h-24 text-base font-black bg-[var(--color-accent)] hover:bg-[var(--color-accent)]/90 text-[var(--color-dark)] rounded-xl flex-col gap-1"
+                  >
+                    <span className="text-xl">x2</span>
+                    <span className="text-xs font-normal opacity-80">+${game.bettingValue * 2}</span>
+                  </Button>
+                </div>
+
+                {/* Scanned Players List */}
+                <Card className="glass-card border-0">
+                  <CardHeader className="py-2">
+                    <CardTitle className="text-[var(--color-cream)] text-xs uppercase tracking-wider flex justify-between">
+                      <span>Round Status</span>
+                      <span>{activeRoundResults.length} / {players.filter(p => !p.isHost).length} Scanned</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="grid gap-1.5">
+                      {players.map(p => {
+                        if (p.isHost) return null
+                        const result = activeRoundResults.find((r) => r.playerId === p.id)?.result
+
+                        return (
+                          <div key={p.id} className={`p-2.5 rounded-lg border flex justify-between items-center text-sm ${result ? 'bg-[var(--color-dark-secondary)]/70 border-[var(--color-accent)]/20' : 'bg-[var(--color-dark)]/30 border-[var(--color-cream)]/10 opacity-50'
+                            }`}>
+                            <div className="font-medium text-[var(--color-cream)]">{p.name}</div>
+                            <div>
+                              {result === 'WIN' && <Badge className="bg-[var(--color-success)] text-[var(--color-dark)] text-xs">WIN</Badge>}
+                              {result === 'DRAW' && <Badge className="bg-[var(--color-dark-secondary)] text-[var(--color-cream)] text-xs">DRAW</Badge>}
+                              {result === 'X2' && <Badge className="bg-[var(--color-accent)] text-[var(--color-dark)] text-xs">X2</Badge>}
+                              {!result && <Badge variant="outline" className="text-[var(--color-cream)]/40 border-[var(--color-cream)]/20 text-xs">Waiting...</Badge>}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="pt-2 border-t border-[var(--color-cream)]/10">
+                  <Button
+                    variant="destructive"
+                    className="w-full h-14 flex items-center justify-center gap-2 text-base font-bold bg-[var(--color-error)] hover:bg-[var(--color-error)]/90"
+                    onClick={handleFinishRound}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? <Spinner size="sm" className="text-[var(--color-cream)]" /> : (
+                      <><Skull className="w-5 h-5" /> END ROUND & SUM UP</>
+                    )}
+                  </Button>
+                  <p className="text-center text-[var(--color-cream)]/40 text-xs mt-2">Unscanned players will automatically LOSE</p>
+                </div>
+              </motion.div>
+            )}
+          </>
+        )}
 
       </div>
     </div>

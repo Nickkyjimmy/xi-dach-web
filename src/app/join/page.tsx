@@ -1,17 +1,19 @@
 'use client'
 
-import { Suspense, useState, useEffect } from 'react'
+import { Suspense, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { joinGameWithNickname } from '@/app/actions/game-actions'
+import { Spinner, PageLoader } from '@/components/ui/spinner'
+import { slideUp, fadeIn } from '@/lib/animations'
 
 function JoinPageContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const pinFromUrl = searchParams.get('pin')
-  
+
   const [step, setStep] = useState<'pin' | 'nickname'>(pinFromUrl ? 'nickname' : 'pin')
   const [pin, setPin] = useState(pinFromUrl || '')
   const [nickname, setNickname] = useState('')
@@ -21,12 +23,12 @@ function JoinPageContent() {
   const handlePinSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    
+
     if (pin.length !== 6) {
       setError('PIN must be 6 digits')
       return
     }
-    
+
     setStep('nickname')
   }
 
@@ -43,10 +45,9 @@ function JoinPageContent() {
 
     try {
       const result = await joinGameWithNickname(pin, nickname.trim())
-      
+
       if (result.error) {
         setError(result.error)
-        // If game not found, go back to PIN step
         if (result.error.includes('not found')) {
           setStep('pin')
           setPin('')
@@ -56,33 +57,31 @@ function JoinPageContent() {
       }
 
       if (result.success && result.playerId && result.gameId && result.redirectUrl) {
-        // Save to localStorage for persistence
         localStorage.setItem('playerId', result.playerId)
         localStorage.setItem('gameId', result.gameId)
-        
-        // Redirect to appropriate page based on game status
         router.push(result.redirectUrl)
       }
-    } catch (err) {
+    } catch {
       setError('Something went wrong. Please try again.')
       setIsLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen bg-game-gradient flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
         {/* Header */}
-        <motion.div 
-          className="text-center mb-8"
-          initial={{ y: -20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
+        <motion.div
+          className="text-center mb-6"
+          variants={slideUp}
+          initial="hidden"
+          animate="visible"
         >
-          <div className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-full mx-auto mb-4 shadow-2xl flex items-center justify-center">
-            <span className="text-5xl">🎮</span>
+          <div className="w-16 h-16 bg-[var(--color-accent)] rounded-full mx-auto mb-3 shadow-lg flex items-center justify-center">
+            <span className="text-3xl">&#127918;</span>
           </div>
-          <h1 className="text-4xl font-black text-white mb-2">Join Game</h1>
-          <p className="text-white/80">Let's get you in the game!</p>
+          <h1 className="text-2xl md:text-3xl font-black text-[var(--color-cream)] mb-1">Join Game</h1>
+          <p className="text-sm text-[var(--color-cream)]/60">Let&apos;s get you in the game!</p>
         </motion.div>
 
         {/* Multi-step Form */}
@@ -90,14 +89,15 @@ function JoinPageContent() {
           {step === 'pin' ? (
             <motion.div
               key="pin-step"
-              initial={{ x: -20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 20, opacity: 0 }}
-              className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 shadow-2xl ring-1 ring-white/20"
+              variants={fadeIn}
+              initial="hidden"
+              animate="visible"
+              exit="hidden"
+              className="glass-card rounded-2xl p-6 shadow-lg"
             >
-              <form onSubmit={handlePinSubmit} className="space-y-6">
+              <form onSubmit={handlePinSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-white font-bold mb-3 text-sm uppercase tracking-wide">
+                  <label className="block text-[var(--color-cream)] font-semibold mb-2 text-sm">
                     Enter Game PIN
                   </label>
                   <Input
@@ -111,7 +111,7 @@ function JoinPageContent() {
                       setError('')
                     }}
                     placeholder="000000"
-                    className="text-center text-4xl h-20 tracking-[0.5em] font-mono font-bold bg-white/20 border-white/30 text-white placeholder:text-white/40 focus-visible:ring-white/50 rounded-2xl"
+                    className="text-center text-2xl h-14 tracking-[0.3em] font-mono font-bold bg-[var(--color-dark)]/60 border-[var(--color-accent)]/30 text-[var(--color-cream)] placeholder:text-[var(--color-cream)]/30 focus-visible:ring-[var(--color-accent)] rounded-xl"
                     maxLength={6}
                     required
                     autoFocus
@@ -120,34 +120,36 @@ function JoinPageContent() {
 
                 {error && (
                   <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-red-500/20 border border-red-500/50 rounded-xl p-3 text-red-100 text-sm text-center"
+                    variants={slideUp}
+                    initial="hidden"
+                    animate="visible"
+                    className="bg-[var(--color-error)]/20 border border-[var(--color-error)]/30 rounded-xl p-3 text-sm text-center"
                   >
-                    {error}
+                    <span className="text-[var(--color-error-light)]">{error}</span>
                   </motion.div>
                 )}
 
                 <Button
                   type="submit"
                   disabled={pin.length !== 6}
-                  className="w-full h-14 text-lg font-bold bg-white text-purple-600 hover:bg-white/90 shadow-xl rounded-2xl transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  className="w-full h-12 text-sm font-bold bg-[var(--color-accent)] hover:bg-[var(--color-accent-dark)] text-[var(--color-dark)] shadow-md rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100"
                 >
-                  Next →
+                  Next
                 </Button>
               </form>
             </motion.div>
           ) : (
             <motion.div
               key="nickname-step"
-              initial={{ x: -20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 20, opacity: 0 }}
-              className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 shadow-2xl ring-1 ring-white/20"
+              variants={fadeIn}
+              initial="hidden"
+              animate="visible"
+              exit="hidden"
+              className="glass-card rounded-2xl p-6 shadow-lg"
             >
-              <form onSubmit={handleNicknameSubmit} className="space-y-6">
+              <form onSubmit={handleNicknameSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-white font-bold mb-3 text-sm uppercase tracking-wide">
+                  <label className="block text-[var(--color-cream)] font-semibold mb-2 text-sm">
                     Enter Your Nickname
                   </label>
                   <Input
@@ -158,35 +160,43 @@ function JoinPageContent() {
                       setError('')
                     }}
                     placeholder="Your Name"
-                    className="text-center text-2xl h-16 font-bold bg-white/20 border-white/30 text-white placeholder:text-white/40 focus-visible:ring-white/50 rounded-2xl"
+                    className="text-center text-xl h-12 font-semibold bg-[var(--color-dark)]/60 border-[var(--color-accent)]/30 text-[var(--color-cream)] placeholder:text-[var(--color-cream)]/30 focus-visible:ring-[var(--color-accent)] rounded-xl"
                     maxLength={20}
                     required
                     autoFocus
                   />
-                  <p className="text-white/60 text-xs mt-2 text-center">
+                  <p className="text-[var(--color-cream)]/50 text-xs mt-2 text-center">
                     Game PIN: <span className="font-mono font-bold">{pin}</span>
                   </p>
                 </div>
 
                 {error && (
                   <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-red-500/20 border border-red-500/50 rounded-xl p-3 text-red-100 text-sm text-center"
+                    variants={slideUp}
+                    initial="hidden"
+                    animate="visible"
+                    className="bg-[var(--color-error)]/20 border border-[var(--color-error)]/30 rounded-xl p-3 text-sm text-center"
                   >
-                    {error}
+                    <span className="text-[var(--color-error-light)]">{error}</span>
                   </motion.div>
                 )}
 
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <Button
                     type="submit"
                     disabled={!nickname.trim() || isLoading}
-                    className="w-full h-14 text-lg font-bold bg-gradient-to-r from-green-400 to-emerald-500 hover:from-green-500 hover:to-emerald-600 text-white shadow-xl rounded-2xl transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                    className="w-full h-12 text-sm font-bold bg-[var(--color-success)] hover:bg-[var(--color-success)]/90 text-[var(--color-dark)] shadow-md rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100"
                   >
-                    {isLoading ? 'Joining...' : 'Join Game! 🚀'}
+                    {isLoading ? (
+                      <span className="flex items-center gap-2">
+                        <Spinner size="sm" className="text-[var(--color-dark)]" />
+                        Joining...
+                      </span>
+                    ) : (
+                      'Join Game'
+                    )}
                   </Button>
-                  
+
                   <Button
                     type="button"
                     onClick={() => {
@@ -195,9 +205,9 @@ function JoinPageContent() {
                       setError('')
                     }}
                     variant="outline"
-                    className="w-full h-12 font-semibold bg-white/10 hover:bg-white/20 border-white/30 text-white rounded-2xl"
+                    className="w-full h-10 text-sm font-medium bg-transparent hover:bg-[var(--color-dark-secondary)] border-[var(--color-accent)]/30 text-[var(--color-cream)]/70 rounded-xl"
                   >
-                    ← Change PIN
+                    Change PIN
                   </Button>
                 </div>
               </form>
@@ -211,11 +221,7 @@ function JoinPageContent() {
 
 export default function JoinPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 flex items-center justify-center">
-        <div className="text-white text-2xl font-bold">Loading...</div>
-      </div>
-    }>
+    <Suspense fallback={<PageLoader message="Loading join page..." />}>
       <JoinPageContent />
     </Suspense>
   )

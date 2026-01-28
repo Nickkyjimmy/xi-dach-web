@@ -12,6 +12,128 @@ body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
 
+/* Color System - Dark Theme with Warm Accents */
+/* #222831 - Dark charcoal (background) */
+/* #393E46 - Dark gray (secondary/cards) */
+/* #948979 - Muted olive/tan (accent) */
+/* #DFD0B8 - Light cream/beige (text/highlights) */
+
+:root {
+  /* Core Palette */
+  --color-dark: #222831;
+  --color-dark-secondary: #393E46;
+  --color-accent: #948979;
+  --color-cream: #DFD0B8;
+
+  /* Extended Palette */
+  --color-dark-lighter: #2d333d;
+  --color-accent-light: #b5a99a;
+  --color-accent-dark: #736b5e;
+  --color-cream-dark: #c4b79e;
+
+  /* Status Colors - Derived from palette */
+  --color-success: #7d9a78;
+  --color-success-light: #9ab896;
+  --color-error: #a87070;
+  --color-error-light: #c49090;
+  --color-warning: #b8a870;
+  --color-warning-light: #d4c890;
+
+  /* Semantic aliases for components */
+  --pastel-lavender: var(--color-accent);
+  --pastel-lavender-light: var(--color-accent-light);
+  --pastel-lavender-dark: var(--color-accent-dark);
+  --pastel-mint: var(--color-success);
+  --pastel-mint-light: var(--color-success-light);
+  --pastel-coral: var(--color-error);
+  --pastel-coral-light: var(--color-error-light);
+  --pastel-amber: var(--color-warning);
+  --pastel-amber-light: var(--color-warning-light);
+  --pastel-sky: #7090a8;
+  --pastel-rose: var(--color-error);
+  --pastel-peach: var(--color-warning);
+  --pastel-slate: var(--color-dark-secondary);
+  --pastel-slate-dark: var(--color-cream);
+}
+
+/* Background Gradients */
+.bg-game-gradient {
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(148, 137, 121, 0.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(148, 137, 121, 0.1) 0%, transparent 50%),
+    linear-gradient(
+      160deg,
+      #222831 0%,
+      #2a313b 25%,
+      #313845 50%,
+      #393E46 100%
+    );
+  min-height: 100vh;
+}
+
+.bg-game-gradient-subtle {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(148, 137, 121, 0.08) 0%, transparent 40%),
+    linear-gradient(
+      180deg,
+      #222831 0%,
+      #2d333d 50%,
+      #393E46 100%
+    );
+  min-height: 100vh;
+}
+
+/* Status Color Utilities */
+.bg-status-success {
+  background-color: var(--color-success);
+}
+
+.bg-status-success-light {
+  background-color: var(--color-success-light);
+}
+
+.bg-status-error {
+  background-color: var(--color-error);
+}
+
+.bg-status-error-light {
+  background-color: var(--color-error-light);
+}
+
+.bg-status-warning {
+  background-color: var(--color-warning);
+}
+
+.bg-status-warning-light {
+  background-color: var(--color-warning-light);
+}
+
+.text-status-success {
+  color: var(--color-success-light);
+}
+
+.text-status-error {
+  color: var(--color-error-light);
+}
+
+.text-status-warning {
+  color: var(--color-warning-light);
+}
+
+/* Glass Card Effect - Dark Theme */
+.glass-card {
+  background: rgba(57, 62, 70, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(223, 208, 184, 0.1);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+}
+
+.glass-card-dark {
+  background: rgba(34, 40, 49, 0.9);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(223, 208, 184, 0.1);
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -55,37 +177,38 @@ body {
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Dark theme as default - using #222831, #393E46, #948979, #DFD0B8 */
+  --background: #222831;
+  --foreground: #DFD0B8;
+  --card: #393E46;
+  --card-foreground: #DFD0B8;
+  --popover: #393E46;
+  --popover-foreground: #DFD0B8;
+  --primary: #948979;
+  --primary-foreground: #222831;
+  --secondary: #393E46;
+  --secondary-foreground: #DFD0B8;
+  --muted: #393E46;
+  --muted-foreground: #DFD0B8cc;
+  --accent: #948979;
+  --accent-foreground: #222831;
+  --destructive: #a87070;
+  --border: #DFD0B81a;
+  --input: #DFD0B826;
+  --ring: #948979;
+  --chart-1: #7d9a78;
+  --chart-2: #948979;
+  --chart-3: #b8a870;
+  --chart-4: #7090a8;
+  --chart-5: #a87070;
+  --sidebar: #222831;
+  --sidebar-foreground: #DFD0B8;
+  --sidebar-primary: #948979;
+  --sidebar-primary-foreground: #222831;
+  --sidebar-accent: #393E46;
+  --sidebar-accent-foreground: #DFD0B8;
+  --sidebar-border: #DFD0B81a;
+  --sidebar-ring: #948979;
 }
 
 .dark {
@@ -127,6 +250,10 @@ body {
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    background: #222831;
+    color: #DFD0B8;
+  }
+  html {
+    background: #222831;
   }
 }
