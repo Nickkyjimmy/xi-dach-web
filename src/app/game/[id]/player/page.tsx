@@ -4,7 +4,7 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { QRCodeGenerator } from '@/components/game/qrcode-generator'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Banknote, Trophy, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { PageLoader } from '@/components/ui/spinner'
@@ -16,7 +16,7 @@ export default function PlayerGamePage() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const gameId = params.id as string
-  const supabase = createClient()
+  const supabaseRef = useRef(createClient())
 
   const [playerId, setPlayerId] = useState<string | null>(null)
   const [player, setPlayer] = useState<{ name: string; balance: number } | null>(null)
@@ -39,7 +39,8 @@ export default function PlayerGamePage() {
     setPlayerId(finalId)
   }, [searchParams])
 
-  const fetchPlayerData = async () => {
+  const fetchPlayerData = useCallback(async () => {
+    const supabase = supabaseRef.current
     try {
       const { data: gameData } = await supabase
         .from('Game')
@@ -76,11 +77,12 @@ export default function PlayerGamePage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [gameId, playerId])
 
   useEffect(() => {
     if (!playerId) return
 
+    const supabase = supabaseRef.current
     fetchPlayerData()
 
     const channel = supabase
@@ -100,7 +102,7 @@ export default function PlayerGamePage() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [gameId, playerId])
+  }, [gameId, playerId, fetchPlayerData])
 
   const myResult = currentRound?.results?.find((r) => r.playerId === playerId)
   const isScanned = !!myResult

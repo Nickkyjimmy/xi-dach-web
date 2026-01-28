@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma"
 import { generateUniquePin } from "@/utils/game"
 import { redirect } from "next/navigation"
+import { TransactionType } from "@prisma/client"
 
 export async function createGame() {
     try {
@@ -115,7 +116,7 @@ export async function startGame(gameId: string) {
 
 export async function startGameWithBet(gameId: string, bettingValue: number) {
     // 1. Update Game: ACTIVE, bettingValue, currentRound = 1
-    const game = await prisma.game.update({
+    await prisma.game.update({
         where: { id: gameId },
         data: { 
             status: 'ACTIVE',
@@ -201,28 +202,28 @@ export async function finishRound(gameId: string) {
             if (player.isHost) continue
             
             let amount = 0
-            let type = 'LOSE'
+            let type: TransactionType = TransactionType.LOSE
             
             if (processedPlayerIds.has(player.id)) {
                 const res = currentRoundResults.find(r => r.playerId === player.id)
-                if (res?.result === 'WIN') { 
+                if (res?.result === 'WIN') {
                     amount = bet
-                    type = 'WIN' 
-                } else if (res?.result === 'DRAW') { 
+                    type = TransactionType.WIN
+                } else if (res?.result === 'DRAW') {
                     amount = 0
-                    type = 'XI_BANG' // Using closest equivalent or just placeholder
-                } else if (res?.result === 'X2') { 
+                    type = TransactionType.XI_BANG // Using closest equivalent or just placeholder
+                } else if (res?.result === 'X2') {
                     amount = bet * 2
-                    type = 'XI_DACH' // Using closest equivalent
+                    type = TransactionType.XI_DACH // Using closest equivalent
                 } else if (res?.result === 'LOSE') {
                     // Start of explicit lose handling
                     amount = -bet
-                    type = 'LOSE'
+                    type = TransactionType.LOSE
                 }
             } else {
                 // Auto lose if not scanned
                 amount = -bet
-                type = 'LOSE'
+                type = TransactionType.LOSE
             }
             
             // Update Player Balance
@@ -237,7 +238,7 @@ export async function finishRound(gameId: string) {
                     gameId,
                     playerId: player.id,
                     amount,
-                    type: type as any, 
+                    type,
                     roundId: currentRound.id
                 }
             })

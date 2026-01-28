@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { QrCode, Banknote, Trophy, Users, ChevronRight, RefreshCw, Skull, LogOut } from 'lucide-react'
 import { QRCodeGenerator } from '@/components/game/qrcode-generator'
@@ -56,7 +56,7 @@ interface Game {
 export default function HostGamePage() {
   const params = useParams()
   const gameId = params.id as string
-  const supabase = createClient()
+  const supabaseRef = useRef(createClient())
 
   const [game, setGame] = useState<Game | null>(null)
   const [players, setPlayers] = useState<Player[]>([])
@@ -69,7 +69,8 @@ export default function HostGamePage() {
   const [isLoading, setIsLoading] = useState(false)
   const [pageLoading, setPageLoading] = useState(true)
 
-  const fetchGameData = async () => {
+  const fetchGameData = useCallback(async () => {
+    const supabase = supabaseRef.current
     try {
       const { data: gameData, error: gameError } = await supabase
         .from('Game')
@@ -110,9 +111,10 @@ export default function HostGamePage() {
     } finally {
       setPageLoading(false)
     }
-  }
+  }, [gameId])
 
   useEffect(() => {
+    const supabase = supabaseRef.current
     fetchGameData()
 
     const channel = supabase
@@ -134,7 +136,7 @@ export default function HostGamePage() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [gameId])
+  }, [gameId, fetchGameData])
 
   const joinUrl = typeof window !== 'undefined' && game?.pin
     ? `${window.location.origin}/join?pin=${game.pin}`

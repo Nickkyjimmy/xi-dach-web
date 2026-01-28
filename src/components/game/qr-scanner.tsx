@@ -16,14 +16,17 @@ export function QRScanner({ onScan, onClose, title = "Scan QR Code" }: QRScanner
     const [manualId, setManualId] = useState("")
     const [scannerInitialized, setScannerInitialized] = useState(false)
     const scannerRef = useRef<Html5QrcodeScanner | null>(null)
+    const mountedRef = useRef(true)
 
     useEffect(() => {
+        mountedRef.current = true
+
         // Initialize scanner only on client side
         if (typeof window !== "undefined") {
             const scanner = new Html5QrcodeScanner(
                 "reader",
-                { 
-                    fps: 10, 
+                {
+                    fps: 10,
                     qrbox: { width: 250, height: 250 },
                     formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
                 },
@@ -34,15 +37,22 @@ export function QRScanner({ onScan, onClose, title = "Scan QR Code" }: QRScanner
                 (decodedText) => {
                     onScan(decodedText)
                 },
-                (error) => {
-                    // console.warn(error)
+                () => {
+                    // Error callback required by html5-qrcode, errors are expected during scanning
                 }
             )
 
             scannerRef.current = scanner
-            setScannerInitialized(true)
+
+            // Use setTimeout to defer state update and avoid synchronous setState in effect
+            setTimeout(() => {
+                if (mountedRef.current) {
+                    setScannerInitialized(true)
+                }
+            }, 0)
 
             return () => {
+                mountedRef.current = false
                 if (scannerRef.current) {
                     scannerRef.current.clear().catch(err => console.error("Scanner clear error", err))
                 }
